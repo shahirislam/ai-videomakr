@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const fetch = require('node-fetch');
 const path = require('path');
 const { sanitizeTitle } = require('../utils/fileUtils');
-const { formatTime, generateScriptFile, getCaptionStyle, buildTransitionFilter } = require('../utils/videoUtils');
+const { formatTime, generateScriptFile, getCaptionStyle, buildTransitionFilter, buildConcatFile } = require('../utils/videoUtils');
 
 // Enhanced execPromise with timeout and large buffer for long video renders
 const execPromise = (command, options = {}) => {
@@ -14,6 +14,28 @@ const execPromise = (command, options = {}) => {
     ...options
   });
 };
+
+// Helper function to detect CFR-related errors from FFmpeg output
+function isCFRError(errorOutput) {
+  if (!errorOutput) return false;
+  const errorString = typeof errorOutput === 'string' ? errorOutput : errorOutput.toString();
+  return /constant frame rate|rate of 1\/0 is invalid|xfade.*CFR|The inputs needs to be a constant frame rate/i.test(errorString);
+}
+
+// Merge videos using concat demuxer (fallback when xfade fails)
+// Note: This loses transitions (hard cuts only) but is guaranteed to work
+async function mergeVideosWithConcat(scenePaths, outputPath, tempDir) {
+  const concatFile = path.join(tempDir, 'concat_list.txt');
+  const concatContent = buildConcatFile(scenePaths);
+  await fs.writeFile(concatFile, concatContent, 'utf-8');
+  
+  console.log('  📋 Using concat demuxer (fallback method - no transitions)');
+  console.log(`  📄 Created concat file: ${concatFile}`);
+  
+  const command = `ffmpeg -f concat -safe 0 -i "${concatFile}" -c copy "${outputPath}" -y`;
+  await execPromise(command);
+  console.log('  ✅ Videos merged successfully with concat demuxer');
+}
 
 async function checkFFmpegInstallation() {
   try {
@@ -229,6 +251,12 @@ async function renderVideos(scenes, audioUrl, projectName, transition, renderFul
       const mergedVideoPath = path.join(tempDir, 'merged_video.mp4');
       await fs.copyFile(singleVideoPath, mergedVideoPath);
     } else {
+      const mergedVideoPath = path.join(tempDir, 'merged_video.mp4');
+      let mergeSuccessful = false;
+      let usedFallback = false;
+
+      // Try xfade transitions first (Option B: Enhanced filter chain)
+      console.log('  🔄 Attempting xfade transitions with enhanced CFR detection...');
       const filterComplex = buildTransitionFilter(scenes, transitionType, transitionDuration, tempDir, captionsEnabled, captionStyle, captionTexts);
       let ffmpegCommand = 'ffmpeg ';
 
@@ -237,7 +265,6 @@ async function renderVideos(scenes, audioUrl, projectName, transition, renderFul
         ffmpegCommand += `-i "${videoPath}" `;
       }
 
-      const mergedVideoPath = path.join(tempDir, 'merged_video.mp4');
       ffmpegCommand += `-filter_complex "${filterComplex}" `;
       ffmpegCommand += `-map "[outv]" `;
 
@@ -245,17 +272,62 @@ async function renderVideos(scenes, audioUrl, projectName, transition, renderFul
       const vaApiTransitionCmd = ffmpegCommand + `-vf "format=nv12|vaapi,hwupload" -c:v h264_vaapi -qp 23 "${mergedVideoPath}" -y`;
       const cpuTransitionCmd = ffmpegCommand + `-c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p "${mergedVideoPath}" -y`;
 
-      try {
-        await execPromise(qsvTransitionCmd);
-        console.log('  ⚡ Intel Quick Sync transitions');
-      } catch {
+      // Try hardware encoders first, then CPU
+      // Try all encoders before falling back - only use fallback if ALL fail with CFR errors
+      const encoderAttempts = [
+        { name: 'QSV', cmd: qsvTransitionCmd },
+        { name: 'VAAPI', cmd: vaApiTransitionCmd },
+        { name: 'CPU', cmd: cpuTransitionCmd }
+      ];
+
+      let allErrorsWereCFR = true;
+      let lastNonCFRError = null;
+
+      for (const encoder of encoderAttempts) {
         try {
-          await execPromise(vaApiTransitionCmd);
-          console.log('  ⚡ VAAPI transitions');
-        } catch {
-          await execPromise(cpuTransitionCmd);
-          console.log('  💻 CPU ultrafast transitions');
+          await execPromise(encoder.cmd);
+          console.log(`  ⚡ ${encoder.name === 'QSV' ? 'Intel Quick Sync' : encoder.name === 'VAAPI' ? 'VAAPI' : 'CPU ultrafast'} transitions`);
+          mergeSuccessful = true;
+          break; // Success, exit loop
+        } catch (error) {
+          const errorOutput = error.stderr || error.stdout || error.message || String(error);
+          const isCFR = isCFRError(errorOutput);
+          
+          if (isCFR) {
+            console.log(`  ⚠️ CFR detection error with ${encoder.name}${encoder.name !== 'CPU' ? ', trying next encoder...' : ''}`);
+          } else {
+            // Non-CFR error - this is a real problem, not a filter chain issue
+            allErrorsWereCFR = false;
+            lastNonCFRError = error;
+            console.log(`  ❌ ${encoder.name} failed with non-CFR error`);
+            // Continue to try other encoders in case this is encoder-specific
+          }
         }
+      }
+
+      // If all attempts failed and all errors were CFR-related, use fallback
+      if (!mergeSuccessful) {
+        if (allErrorsWereCFR) {
+          usedFallback = true;
+          console.log('  ⚠️ All encoders failed with CFR errors, will use fallback');
+        } else if (lastNonCFRError) {
+          // At least one error was not CFR-related, throw it
+          throw lastNonCFRError;
+        }
+      }
+
+      // If xfade failed due to CFR error, use concat demuxer fallback
+      if (!mergeSuccessful && usedFallback) {
+        console.log('  🔄 Falling back to concat demuxer (Option A)...');
+        const scenePaths = [];
+        for (let i = 0; i < scenes.length; i++) {
+          scenePaths.push(path.join(tempDir, 'scenes', `scene_${String(i + 1).padStart(3, '0')}.mp4`));
+        }
+        await mergeVideosWithConcat(scenePaths, mergedVideoPath, tempDir);
+        console.log('  ✅ Fallback merge completed successfully');
+      } else if (!mergeSuccessful) {
+        // If merge failed for other reasons, throw the error
+        throw new Error('Video merging failed for unknown reason');
       }
     }
 
