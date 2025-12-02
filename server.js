@@ -29,8 +29,11 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from dist directory (Vite build output) - React app
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve static files from public directory (for other assets)
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Serve src directory for ES modules (needed for /src/app.js)
 app.use('/src', express.static(path.join(__dirname, 'src')));
@@ -38,23 +41,25 @@ app.use('/src', express.static(path.join(__dirname, 'src')));
 // Logging middleware
 app.use(logger);
 
-// Serve the main HTML file
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Serve test page
-app.get('/test.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'test.html'));
-});
-
-// Mount route modules
+// Mount API route modules (must be before catch-all route)
 app.use('/api', claudeRoutes);
 app.use('/api', imageRoutes);
 app.use('/api', voiceRoutes);
 app.use('/api', videoRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api', healthRoutes);
+
+// Serve test page (must be before catch-all route)
+app.get('/test.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
+// Serve the main HTML file from dist (React app)
+// Handle all other routes - let React Router handle client-side routing
+// This must be last to catch all non-API routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

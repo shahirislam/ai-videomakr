@@ -9,7 +9,7 @@ import { api } from './api.js';
  * @returns {Promise<Object>} API response with image data
  */
 export async function generateImage(prompt, aspectRatio = '16:9', renderingSpeed = 'TURBO', styleType = 'REALISTIC') {
-  const response = await api.post('/api/images/generate', {
+  const response = await api.post('/api/generate-image', {
     prompt,
     aspectRatio,
     renderingSpeed,

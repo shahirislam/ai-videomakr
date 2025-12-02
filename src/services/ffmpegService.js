@@ -173,10 +173,12 @@ async function renderVideos(scenes, audioUrl, projectName, transition, renderFul
       }
 
       // Try hardware encoders in priority order
+      // CRITICAL: All encoders must produce yuv420p (not yuvj420p) for xfade compatibility
       try {
         if (!captionsEnabled || !captionTexts[sceneIndex]) {
+          // QSV: Convert to yuv420p after hardware processing
           const qsvVF = "hwupload=extra_hw_frames=64,format=qsv,scale_qsv=1920:1080";
-          const qsvCommand = `ffmpeg -init_hw_device qsv=hw -filter_hw_device hw -loop 1 -i "${imagePath}" -t ${duration.toFixed(3)} -vf "${qsvVF}" -c:v h264_qsv -preset veryfast -global_quality 23 -look_ahead 0 -r 24 "${videoPath}" -y`;
+          const qsvCommand = `ffmpeg -init_hw_device qsv=hw -filter_hw_device hw -loop 1 -i "${imagePath}" -t ${duration.toFixed(3)} -vf "${qsvVF}" -c:v h264_qsv -preset veryfast -global_quality 23 -look_ahead 0 -r 24 -pix_fmt yuv420p -g 24 -bf 0 "${videoPath}" -y`;
           await execPromise(qsvCommand, { timeout: timeoutDuration });
           console.log(`    ⚡ Intel Quick Sync (QSV)`);
         } else {
@@ -185,20 +187,22 @@ async function renderVideos(scenes, audioUrl, projectName, transition, renderFul
       } catch (qsvError) {
         try {
           if (!captionsEnabled || !captionTexts[sceneIndex]) {
+            // VAAPI: Ensure proper pixel format output
             const vaApiVF = "format=nv12|vaapi,hwupload,scale_vaapi=1920:1080:force_original_aspect_ratio=decrease,pad_vaapi=1920:1080:(ow-iw)/2:(oh-ih)/2";
-            const vaApiCommand = `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -loop 1 -i "${imagePath}" -t ${duration.toFixed(3)} -vf "${vaApiVF}" -c:v h264_vaapi -qp 23 -r 24 "${videoPath}" -y`;
+            const vaApiCommand = `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -loop 1 -i "${imagePath}" -t ${duration.toFixed(3)} -vf "${vaApiVF}" -c:v h264_vaapi -qp 23 -r 24 -pix_fmt yuv420p -g 24 -bf 0 "${videoPath}" -y`;
             await execPromise(vaApiCommand, { timeout: timeoutDuration });
             console.log(`    ⚡ Hardware (VAAPI)`);
           } else {
             throw new Error('VAAPI skip for captions');
           }
         } catch (vaApiError) {
-          // Fallback to CPU
+          // Fallback to CPU - ensure constant frame rate and proper pixel format for xfade compatibility
           let cpuVF = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2";
           if (captionFilter) {
             cpuVF += `,${captionFilter}`;
           }
-          const cpuCommand = `ffmpeg -loop 1 -i "${imagePath}" -t ${duration.toFixed(3)} -c:v libx264 -preset ultrafast -crf 23 -tune stillimage -vf "${cpuVF}" -pix_fmt yuv420p -r 24 "${videoPath}" -y`;
+          // -g 24 sets GOP size to match frame rate, -bf 0 disables B-frames for constant frame rate
+          const cpuCommand = `ffmpeg -loop 1 -i "${imagePath}" -t ${duration.toFixed(3)} -c:v libx264 -preset ultrafast -crf 23 -tune stillimage -vf "${cpuVF}" -pix_fmt yuv420p -r 24 -g 24 -bf 0 "${videoPath}" -y`;
           await execPromise(cpuCommand, { timeout: timeoutDuration });
           console.log(`    💻 CPU Ultrafast${captionFilter ? ' (with captions)' : ''}`);
         }

@@ -113,10 +113,17 @@ function buildTransitionFilter(scenes, transitionType, transitionDuration, tempD
   console.log(`\n🔧 Building transition filter for ${scenes.length} scenes:`);
   
   // Step 1: Scale each video input (1080p Full HD maintained!)
-  // Add captions if enabled
+  // CRITICAL: Convert pixel format and ensure constant frame rate for xfade
+  // xfade requires: constant frame rate and proper pixel format (yuv420p, not yuvj420p)
   scenes.forEach((scene, i) => {
-    let videoFilter = `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,` +
-      `pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,setpts=PTS-STARTPTS`;
+    // Convert deprecated yuvj420p to yuv420p with proper color range
+    // Then scale, pad, set constant frame rate, and normalize timestamps
+    let videoFilter = `[${i}:v]format=yuv420p,` +  // Convert to standard yuv420p (fixes deprecated pixel format)
+      `scale=1920:1080:force_original_aspect_ratio=decrease,` +
+      `pad=1920:1080:(ow-iw)/2:(oh-ih)/2,` +
+      `setsar=1,` +
+      `fps=24,` +  // Force constant frame rate (required for xfade)
+      `setpts=PTS-STARTPTS`;  // Normalize timestamps
     
     // Add captions if enabled and text exists for this scene
     if (captionsEnabled && captionTexts[i]) {
