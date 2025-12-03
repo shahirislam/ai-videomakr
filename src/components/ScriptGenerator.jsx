@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useScript } from '../context/ScriptContext';
 import { useUI } from '../context/UIContext';
+import { useToast } from '../context/ToastContext';
 import { generateScript } from '../services/scriptService';
 import { DEFAULTS } from '../utils/constants';
-import { Sparkles, Settings, FileText, ChevronDown, Loader2 } from 'lucide-react';
+import { Sparkles, Settings, FileText, ChevronDown, Loader2, Upload, X } from 'lucide-react';
 // Animation imports removed to prevent runtime errors
 
 const ScriptGenerator = () => {
@@ -16,9 +17,12 @@ const ScriptGenerator = () => {
     } = useScript();
 
     const { setLoading } = useUI();
+    const { showSuccess, showError, showWarning } = useToast();
 
     const [additionalContext, setAdditionalContext] = useState('');
     const [showSettings, setShowSettings] = useState(false);
+    const [uploadedFileName, setUploadedFileName] = useState(null);
+    const fileInputRef = useRef(null);
 
     // Animation effect removed - was causing runtime errors
     // useEffect(() => {
@@ -27,7 +31,7 @@ const ScriptGenerator = () => {
 
     const handleGenerate = async () => {
         if (!title) {
-            alert('Please enter a title');
+            showWarning('Please enter a title');
             return;
         }
 
@@ -82,12 +86,102 @@ ${userPrompt}`;
 
         } catch (error) {
             console.error('Error generating script:', error);
-            alert('Failed to generate script: ' + error.message);
+            showError('Failed to generate script: ' + error.message);
         } finally {
             setIsGenerating(false);
             setLoading(prev => ({ ...prev, script: false }));
         }
     };
+
+    const handleFileUpload = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Validate file type
+        if (!file.name.endsWith('.txt')) {
+            showWarning('Please upload a .txt file');
+            return;
+        }
+
+        // Validate file size (max 1MB)
+        if (file.size > 1024 * 1024) {
+            showWarning('File size must be less than 1MB');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = e.target.result;
+                parseUploadedScript(content, file.name);
+            } catch (error) {
+                console.error('Error reading file:', error);
+                showError('Failed to read file. Please try again.');
+            }
+        };
+        reader.onerror = () => {
+            showError('Error reading file. Please try again.');
+        };
+        reader.readAsText(file);
+    };
+
+    const parseUploadedScript = (content, fileName) => {
+        // Try to extract title from first line or filename
+        let scriptContent = content.trim();
+        let extractedTitle = '';
+
+        // Check if first line looks like a title (short, no punctuation at end, or has "Title:" prefix)
+        const lines = scriptContent.split('\n').filter(line => line.trim());
+
+        if (lines.length > 0) {
+            const firstLine = lines[0].trim();
+
+            // Check for "Title:" prefix
+            if (firstLine.toLowerCase().startsWith('title:')) {
+                extractedTitle = firstLine.substring(6).trim();
+                scriptContent = lines.slice(1).join('\n').trim();
+            }
+            // Check if first line is short and looks like a title
+            else if (firstLine.length < 100 && !firstLine.match(/[.!?]$/)) {
+                // Check if second line is empty or starts with capital (likely paragraph start)
+                if (lines.length > 1 && (lines[1].trim() === '' || /^[A-Z]/.test(lines[1].trim()))) {
+                    extractedTitle = firstLine;
+                    scriptContent = lines.slice(1).join('\n').trim();
+                }
+            }
+        }
+
+        // If no title extracted, use filename without extension
+        if (!extractedTitle && fileName) {
+            extractedTitle = fileName.replace(/\.txt$/i, '').replace(/[_-]/g, ' ');
+        }
+
+        // Set the script and title
+        if (extractedTitle) {
+            setTitle(extractedTitle);
+        }
+
+        setScript(scriptContent);
+        setUploadedFileName(fileName);
+
+        // Show success message
+        showSuccess(`Script uploaded successfully!${extractedTitle ? ` Title: ${extractedTitle}` : ''}`);
+        setTimeout(() => {
+            showSuccess('You can now proceed to edit and parse it into scenes.');
+        }, 500);
+    };
+
+    const handleRemoveUpload = () => {
+        setUploadedFileName(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    // Debug: Log when component renders
+    useEffect(() => {
+        console.log('ScriptGenerator: Component rendered, upload section should be visible');
+    }, []);
 
     return (
         <div ref={containerRef} className="glass-card relative overflow-hidden group">
@@ -104,6 +198,57 @@ ${userPrompt}`;
             </div>
 
             <div className="space-y-6">
+                {/* File Upload Section - Prominent - MUST BE VISIBLE */}
+                <div className="p-8 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-xl border-2 border-dashed border-indigo-400 dark:border-indigo-500 hover:border-indigo-500 dark:hover:border-indigo-400 transition-all shadow-lg" style={{ display: 'block !important', visibility: 'visible !important' }}>
+                    <div className="text-center">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-indigo-200 dark:bg-indigo-900/50 mb-4 shadow-md">
+                            <Upload className="text-indigo-700 dark:text-indigo-300" size={32} />
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                            Upload Your Script
+                        </h3>
+                        <p className="text-base text-gray-700 dark:text-gray-300 mb-6 font-medium">
+                            Have a script ready? Upload a .txt file to get started instantly
+                        </p>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".txt"
+                                onChange={handleFileUpload}
+                                className="hidden"
+                                id="script-upload"
+                            />
+                            <label
+                                htmlFor="script-upload"
+                                className="px-10 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer transition-all shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 flex items-center gap-3 text-lg"
+                            >
+                                <Upload size={24} />
+                                Choose .txt File
+                            </label>
+                            {uploadedFileName && (
+                                <div className="flex items-center gap-2 px-4 py-2.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg border border-green-200 dark:border-green-800">
+                                    <FileText size={18} />
+                                    <span className="text-sm font-medium">{uploadedFileName}</span>
+                                    <button
+                                        onClick={handleRemoveUpload}
+                                        className="ml-2 hover:bg-green-200 dark:hover:bg-green-900/50 rounded p-1 transition-colors"
+                                        title="Remove file"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="relative flex items-center my-6">
+                    <div className="flex-1 border-t border-gray-300 dark:border-gray-600"></div>
+                    <span className="px-4 text-sm text-gray-500 dark:text-gray-400 font-semibold bg-white dark:bg-gray-800">OR</span>
+                    <div className="flex-1 border-t border-gray-300 dark:border-gray-600"></div>
+                </div>
+
                 <div className="group/input">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 ml-1">
                         Video Title

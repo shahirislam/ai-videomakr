@@ -3,6 +3,7 @@ import { useScript } from '../context/ScriptContext';
 import { useMedia } from '../context/MediaContext';
 import { useUI } from '../context/UIContext';
 import { renderVideos, checkFFmpegStatus } from '../services/videoService';
+import { addVideoToHistory } from '../services/videoHistoryService';
 import { Film, Play, Download, AlertCircle, CheckCircle2, Loader2, Video } from 'lucide-react';
 // Animation imports removed to prevent runtime errors
 
@@ -76,6 +77,24 @@ const VideoRenderer = () => {
                     createdAt: new Date().toISOString()
                 };
                 setRenderedVideos(prev => [newVideo, ...prev]);
+
+                // Save to video history
+                const totalDuration = scenes.length > 0 
+                    ? scenes[scenes.length - 1].endSeconds 
+                    : 0;
+                
+                addVideoToHistory({
+                    sessionId: result.sessionId,
+                    title: title || 'Untitled Video',
+                    date: Date.now(),
+                    duration: totalDuration,
+                    filePath: result.finalVideo,
+                    scenes: scenes.length,
+                    transition: { type: 'fade', duration: 0.5 },
+                    creditsUsed: 0, // TODO: Calculate actual credits used
+                    downloadUrl: result.finalVideo,
+                    sceneVideos: result.sceneVideos || []
+                });
             } else {
                 throw new Error(result.message || 'Rendering failed');
             }

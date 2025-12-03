@@ -4,6 +4,7 @@ import { useMedia } from '../context/MediaContext';
 import { useUI } from '../context/UIContext';
 import { ImageIcon, Palette, Loader2, Sparkles, Download, RefreshCw } from 'lucide-react';
 import { API_BASE_URL } from '../utils/constants.js';
+import ProgressBar from './common/ProgressBar';
 
 // Module-level debug
 console.log('🟢 ImageGenerator module loading...');
@@ -300,6 +301,20 @@ Output ONLY the final prompt - no analysis or additional text.`;
                         </>
                     )}
                 </button>
+
+                {/* Progress Bar */}
+                {isGeneratingImages && (
+                    <div className="mt-4">
+                        <ProgressBar
+                            progress={imageGenerationProgress}
+                            status={`Generating scene images...`}
+                            current={images.filter(i => i.status === 'completed').length}
+                            total={scenes.length}
+                            variant="info"
+                            showPercentage={true}
+                        />
+                    </div>
+                )}
             </div>
 
             {images.length > 0 && (

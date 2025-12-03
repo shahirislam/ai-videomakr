@@ -17,6 +17,7 @@ export const MediaProvider = ({ children }) => {
     const [audioDuration, setAudioDuration] = useState(0);
     const [generatedAudioUrl, setGeneratedAudioUrl] = useState(null);
     const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
+    const [voiceGenerationProgress, setVoiceGenerationProgress] = useState(0);
 
     const value = {
         images,
@@ -38,7 +39,9 @@ export const MediaProvider = ({ children }) => {
         generatedAudioUrl,
         setGeneratedAudioUrl,
         isGeneratingVoice,
-        setIsGeneratingVoice
+        setIsGeneratingVoice,
+        voiceGenerationProgress,
+        setVoiceGenerationProgress
     };
 
     return (
