@@ -1,6 +1,6 @@
 // App constants
 export const VOICE_RATE_WORDS_PER_CREDIT = 120;
-export const API_BASE_URL = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+export const API_BASE_URL = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000'; // Changed from 3000
 
 // API endpoints
 export const API_ENDPOINTS = {
