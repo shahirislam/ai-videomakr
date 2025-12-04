@@ -49,6 +49,7 @@ const VoiceGenerator = () => {
     const [selectedVoiceId, setSelectedVoiceId] = useState(VOICES[VOICE_PROVIDERS.ELEVENLABS][0].id);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progressStage, setProgressStage] = useState('');
+    const [showAllVoices, setShowAllVoices] = useState(false);
 
     const handleGenerateVoice = async () => {
         if (!script) return;
@@ -174,7 +175,7 @@ const VoiceGenerator = () => {
                     Select Voice
                 </label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {VOICES[provider].map((voice) => {
+                    {VOICES[provider].slice(0, showAllVoices ? undefined : 8).map((voice) => {
                         const isSelected = selectedVoiceId === voice.id;
                         return (
                             <button
@@ -219,6 +220,18 @@ const VoiceGenerator = () => {
                         );
                     })}
                 </div>
+
+                {/* Show More/Less Button */}
+                {VOICES[provider].length > 8 && (
+                    <div className="mt-4 text-center">
+                        <button
+                            onClick={() => setShowAllVoices(!showAllVoices)}
+                            className="px-6 py-2 text-sm font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors underline underline-offset-4"
+                        >
+                            {showAllVoices ? 'Show Less' : `Show ${VOICES[provider].length - 8} More Voices`}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Generate / Stop Button */}
