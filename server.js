@@ -58,7 +58,49 @@ app.get('/test.html', (req, res) => {
 // Handle all other routes - let React Router handle client-side routing
 // This must be last to catch all non-API routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  // Skip API routes (already handled above)
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API route not found' });
+  }
+  
+  const distIndexPath = path.join(__dirname, 'dist', 'index.html');
+  const fs = require('fs');
+  
+  // Check if dist/index.html exists (production build)
+  if (fs.existsSync(distIndexPath)) {
+    res.sendFile(distIndexPath);
+  } else {
+    // Dev mode: dist doesn't exist, return helpful message
+    res.status(503).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Development Mode - StoryVid AI</title>
+        <style>
+          body { font-family: system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+          h1 { color: #2563eb; }
+          code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+        </style>
+      </head>
+      <body>
+        <h1>🚀 Backend Server Running</h1>
+        <p>The backend API is running on <strong>http://localhost:${process.env.PORT || 3000}</strong></p>
+        <p><strong>To run the frontend in development mode:</strong></p>
+        <ol>
+          <li>Open a new terminal</li>
+          <li>Run: <code>npm run dev:frontend</code></li>
+          <li>Access the app at <code>http://localhost:5173</code></li>
+        </ol>
+        <p><strong>Or build for production:</strong></p>
+        <ol>
+          <li>Run: <code>npm run build</code></li>
+          <li>Then restart the server</li>
+        </ol>
+        <p><em>Note: In development, the React app runs on Vite's dev server (port 5173) which proxies API calls to this backend.</em></p>
+      </body>
+      </html>
+    `);
+  }
 });
 
 // Error handling middleware (must be last)
